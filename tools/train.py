@@ -188,11 +188,11 @@ def main():
             config=cfg.pretty_text,
         )
     
-    if 'tmodel' in cfg:
-        tmodel = build_posenet(cfg.tmodel)
+    if 'teacher_model' in cfg:
+        teacher_model = build_posenet(cfg.teacher_model)
         distill_model(
             model,
-            tmodel,
+            teacher_model,
             datasets,
             cfg,
             distributed=distributed,

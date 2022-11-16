@@ -215,7 +215,7 @@ def train_model(model,
 
 
 def distill_model(model,
-                tmodel,
+                teacher_model,
                 dataset,
                 cfg,
                 distributed=False,
@@ -293,7 +293,7 @@ def distill_model(model,
 
     runner = DistillationRunner(
         model,
-        tmodel,
+        teacher_model,
         optimizer=optimizer,
         work_dir=cfg.work_dir,
         logger=logger,

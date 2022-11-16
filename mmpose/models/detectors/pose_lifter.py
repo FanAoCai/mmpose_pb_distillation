@@ -1,5 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import warnings
+import torch
 
 import mmcv
 import numpy as np
@@ -179,6 +180,73 @@ class PoseLifter(BasePose):
         else:
             return self.forward_test(input, metas, **kwargs)
 
+    def forward_distill(self, input, target, target_weight, teacher_target, metas,**kwargs):
+        """Defines the computation performed at every call when training."""
+        assert input.size(0) == len(metas)
+
+        # supervised learning
+        # pose model
+        features = self.backbone(input)
+        if self.with_neck:
+            features = self.neck(features)
+        if self.with_keypoint:
+            output = self.keypoint_head(features)
+
+        losses = dict()
+        if self.with_keypoint:
+            keypoint_losses = self.keypoint_head.get_loss(
+                output, target, target_weight)
+
+            #增加得到教师网络结果作为标签
+            teacher_target = torch.tensor(teacher_target).cuda()
+            teacher_keypoint_losses = self.keypoint_head.get_loss(
+                output, teacher_target, target_weight)
+            loss_dict = dict(
+                list(keypoint_losses.items()) + list({'kd_heatmap_loss': teacher_keypoint_losses['heatmap_loss']}.items()))
+            losses.update(loss_dict)
+
+            keypoint_accuracy = self.keypoint_head.get_accuracy(
+                output, target, target_weight, metas)
+            losses.update(keypoint_losses)
+            losses.update(keypoint_accuracy)
+
+        # trajectory model
+        if self.with_traj:
+            traj_features = self.traj_backbone(input)
+            if self.with_traj_neck:
+                traj_features = self.traj_neck(traj_features)
+            traj_output = self.traj_head(traj_features)
+
+            traj_losses = self.traj_head.get_loss(traj_output,
+                                                  kwargs['traj_target'], None)
+            losses.update(traj_losses)
+
+        # semi-supervised learning
+        if self.semi:
+            ul_input = kwargs['unlabeled_input']
+            ul_features = self.backbone(ul_input)
+            if self.with_neck:
+                ul_features = self.neck(ul_features)
+            ul_output = self.keypoint_head(ul_features)
+
+            ul_traj_features = self.traj_backbone(ul_input)
+            if self.with_traj_neck:
+                ul_traj_features = self.traj_neck(ul_traj_features)
+            ul_traj_output = self.traj_head(ul_traj_features)
+
+            output_semi = dict(
+                labeled_pose=output,
+                unlabeled_pose=ul_output,
+                unlabeled_traj=ul_traj_output)
+            target_semi = dict(
+                unlabeled_target_2d=kwargs['unlabeled_target_2d'],
+                intrinsics=kwargs['intrinsics'])
+
+            semi_losses = self.loss_semi(output_semi, target_semi)
+            losses.update(semi_losses)
+
+        return losses
+
     def forward_train(self, input, target, target_weight, metas, **kwargs):
         """Defines the computation performed at every call when training."""
         assert input.size(0) == len(metas)
@@ -236,6 +304,29 @@ class PoseLifter(BasePose):
             losses.update(semi_losses)
 
         return losses
+
+    def forward_test_distill(self, input,metas, **kwargs):
+        """Defines the computation performed at every call when testing."""
+        assert input.size(0) == len(metas)
+
+        results = {}
+
+        features = self.backbone(input)
+        if self.with_neck:
+            features = self.neck(features)
+        if self.with_keypoint:
+            output = self.keypoint_head.inference_model(features)
+            keypoint_result = self.keypoint_head.decode(metas, output)
+            results.update(keypoint_result)
+
+        if self.with_traj:
+            traj_features = self.traj_backbone(input)
+            if self.with_traj_neck:
+                traj_features = self.traj_neck(traj_features)
+            traj_output = self.traj_head.inference_model(traj_features)
+            results['traj_preds'] = traj_output
+
+        return results
 
     def forward_test(self, input, metas, **kwargs):
         """Defines the computation performed at every call when training."""

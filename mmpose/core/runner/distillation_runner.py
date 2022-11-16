@@ -32,8 +32,8 @@ class DistillationRunner(EpochBasedRunner):
     dataloader[0], which is the main dataloader.
     """
     def __init__(self,
-                 smodel: torch.nn.Module,
-                 tmodel: torch.nn.Module,
+                 student_model: torch.nn.Module,
+                 teacher_model: torch.nn.Module,
                  batch_processor: Optional[Callable] = None,
                  optimizer: Union[Dict, torch.optim.Optimizer, None] = None,
                  work_dir: Optional[str] = None,
@@ -43,7 +43,7 @@ class DistillationRunner(EpochBasedRunner):
                  max_epochs: Optional[int] = None) -> None:
         
         super(DistillationRunner, self).__init__(
-                model=smodel,
+                model=student_model,
                 batch_processor=batch_processor,
                 optimizer=optimizer,
                 work_dir=work_dir,
@@ -52,16 +52,14 @@ class DistillationRunner(EpochBasedRunner):
                 max_iters=max_iters,
                 max_epochs=max_epochs)
         
-        if is_module_wrapper(tmodel):
-            self.tmodel = tmodel.module
+        if is_module_wrapper(teacher_model):
+            self.tmodel = teacher_model.module
         else:
-            self.tmodel = tmodel
+            self.tmodel = teacher_model
         self.tmodel.eval()
 
-        #?
     def run_iter(self, data_batch, train_mode, source, **kwargs):
-        # toutputs = self.tmodel.forward_test_distill(data_batch['img'], **kwargs)
-        toutputs = self.tmodel.disdill_delta_feature_get(data_batch['img'], **kwargs)
+        toutputs = self.tmodel.forward_test_distill(data_batch['img'], **kwargs)
         if train_mode:
             # used teacher outputs as extra supervised information
             # data_batch = dict(list(data_batch.items()) + list({'teacher_output_heatmap': toutputs['output_heatmap']}.items()))
